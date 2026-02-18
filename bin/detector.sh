@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # bin/detector.sh — NetFlow DDoS Detector (NFDD)
-# Usage: ./bin/detector.sh [--config /path/to/detector.conf] [--dry-run]
+# Usage: ./bin/detector.sh [--config FILE] [--file PATH] [--dry-run] [--debug]
+#   --file PATH   use this nfcapd.* file (hook mode); skip auto-find and wait.
+#   NFDD_FILE     env alias for --file (--file takes priority).
 #
 # Architecture:
 #   bin/detector.sh          — orchestrator (this file)
@@ -20,19 +22,25 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # ── Parse CLI arguments ───────────────────────────────────────────────────────
 CONFIG_FILE="${SCRIPT_DIR}/etc/detector.conf"
 DRY_RUN=0
+FILE_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --config)  CONFIG_FILE="$2"; shift 2 ;;
+        --file)    FILE_OVERRIDE="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1;         shift   ;;
         --debug)   export DEBUG=1;    shift   ;;
         -h|--help)
-            echo "Usage: $0 [--config FILE] [--dry-run] [--debug]"
+            echo "Usage: $0 [--config FILE] [--file PATH] [--dry-run] [--debug]"
+            echo "  --file PATH   use this nfcapd.* file (hook mode); skip auto-find."
             exit 0
             ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
+
+# NFDD_FILE env as alias for --file (CLI takes priority)
+[[ -z "$FILE_OVERRIDE" && -n "${NFDD_FILE:-}" ]] && FILE_OVERRIDE="$NFDD_FILE"
 
 # ── Load config ───────────────────────────────────────────────────────────────
 if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -86,33 +94,45 @@ main() {
     log_debug "Config: TRAFFIC_SCOPE=$traffic_scope"
     log_debug "Config: NFDUMP_TOP_N=$NFDUMP_TOP_N NFDUMP_TOP_SORT=${NFDUMP_TOP_SORT:-record/flows} THRESHOLD_SUSPICIOUS=$THRESHOLD_SUSPICIOUS"
 
-    # 1. Find capture file
+    # 1. Find capture file (or use --file / NFDD_FILE override)
     local last_file
-    if [[ "${WAIT_FOR_PREVIOUS_INTERVAL:-0}" == "1" ]]; then
-        local prev_ts expected_file
-        prev_ts=$(nfdump_expected_previous_minute)
-        expected_file="nfcapd.${prev_ts}"
-        log_info "Waiting for previous interval file: $expected_file (retry every ${WAIT_RETRY_SEC:-10}s, up to ${WAIT_RETRY_COUNT:-6} times)"
-        local retries=0
-        local max_retries="${WAIT_RETRY_COUNT:-6}"
-        local retry_sec="${WAIT_RETRY_SEC:-10}"
-        while true; do
-            last_file=$(nfdump_find_file_for_interval "$NFSEN_BASE" "$prev_ts")
-            if [[ -n "$last_file" ]]; then
-                log_info "Found file for previous minute: $last_file"
-                break
+    if [[ -n "${FILE_OVERRIDE:-}" ]]; then
+        if [[ ! -f "$FILE_OVERRIDE" || ! -r "$FILE_OVERRIDE" ]]; then
+            log_error "Input file not found/readable: $FILE_OVERRIDE"
+            if [[ "${HOOK_MODE:-0}" != "1" ]]; then
+                send_telegram "⚠️ NFDD — ERROR" "Файл не найден или недоступен: ${FILE_OVERRIDE}"
             fi
-            (( retries++ )) || true
-            if (( retries >= max_retries )); then
-                log_error "File for previous interval ($expected_file) not found after ${max_retries} retries"
-                send_telegram "⚠️ NFDD — ERROR" "Файл за предыдущую минуту (${expected_file}) не найден в ${NFSEN_BASE}"
-                exit 1
-            fi
-            log_info "  Retry $retries/$max_retries: waiting ${retry_sec}s..."
-            sleep "$retry_sec"
-        done
+            exit 1
+        fi
+        last_file="$FILE_OVERRIDE"
+        log_info "Using file (hook): $last_file"
     else
-        last_file=$(nfdump_find_last_file "$NFSEN_BASE")
+        if [[ "${WAIT_FOR_PREVIOUS_INTERVAL:-0}" == "1" ]]; then
+            local prev_ts expected_file
+            prev_ts=$(nfdump_expected_previous_minute)
+            expected_file="nfcapd.${prev_ts}"
+            log_info "Waiting for previous interval file: $expected_file (retry every ${WAIT_RETRY_SEC:-10}s, up to ${WAIT_RETRY_COUNT:-6} times)"
+            local retries=0
+            local max_retries="${WAIT_RETRY_COUNT:-6}"
+            local retry_sec="${WAIT_RETRY_SEC:-10}"
+            while true; do
+                last_file=$(nfdump_find_file_for_interval "$NFSEN_BASE" "$prev_ts")
+                if [[ -n "$last_file" ]]; then
+                    log_info "Found file for previous minute: $last_file"
+                    break
+                fi
+                (( retries++ )) || true
+                if (( retries >= max_retries )); then
+                    log_error "File for previous interval ($expected_file) not found after ${max_retries} retries"
+                    send_telegram "⚠️ NFDD — ERROR" "Файл за предыдущую минуту (${expected_file}) не найден в ${NFSEN_BASE}"
+                    exit 1
+                fi
+                log_info "  Retry $retries/$max_retries: waiting ${retry_sec}s..."
+                sleep "$retry_sec"
+            done
+        else
+            last_file=$(nfdump_find_last_file "$NFSEN_BASE")
+        fi
     fi
 
     if [[ "${DEBUG:-0}" == "1" ]]; then
@@ -128,7 +148,7 @@ main() {
         send_telegram "⚠️ NFDD — ERROR" "Нет nfcapd файлов в ${NFSEN_BASE}"
         exit 1
     fi
-    log_info "Using file: $last_file"
+    [[ -z "${FILE_OVERRIDE:-}" ]] && log_info "Using file: $last_file"
 
     # Режим анализа: json (FLOW_NDJSON_V1 в файл для детекторов vNext) или legacy (nfdump -A/text).
     export NFDUMP_FORMAT="${NFDUMP_FORMAT:-json}"
