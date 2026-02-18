@@ -12,6 +12,8 @@ CONFIG_FILE="${SCRIPT_DIR}/etc/detector.conf"
 # shellcheck source=/dev/null
 source "$CONFIG_FILE"
 source "${SCRIPT_DIR}/lib/log.sh"
+source "${SCRIPT_DIR}/lib/normalize.sh"
+source "${SCRIPT_DIR}/lib/json_stream.sh"
 source "${SCRIPT_DIR}/lib/nfdump_analysis.sh"
 source "${SCRIPT_DIR}/lib/json_flow.sh"
 [[ -f "${SCRIPT_DIR}/lib/detectors/nat_burst.sh" ]] && source "${SCRIPT_DIR}/lib/detectors/nat_burst.sh"
@@ -76,26 +78,17 @@ if (( JSON_MODE == 1 )); then
 fi
 
 status_fp="" status_adb="" status_stg="" status_nat=""
-raw=$(nfdump -r "$file" "${NFDUMP_FILTER} and (${traffic_scope})" \
-    -A srcip,dstip -s "${NFDUMP_TOP_SORT:-record/flows}" -n "$NFDUMP_TOP_N" 2>/dev/null) || raw=""
 thr="$THRESHOLD_SUSPICIOUS"
 
-echo "=== NFDD verify_analysis (self-test) ==="
+echo "=== NFDD verify_analysis (self-test, canonical TSV) ==="
 echo "File: $file | Scope: $traffic_scope"
 echo ""
 
-# --- FLOODPAIRS ---
+# --- FLOODPAIRS (через json_stream) ---
 echo "--- FLOODPAIRS ---"
-results_fp=$(echo "$raw" | awk -v thr="$thr" '
-    /^[0-9]{4}-[0-9]{2}-[0-9]{2}/ {
-        src=$4; dst=$5; flows=$NF
-        if ($(NF-2) ~ /^[GMK]$/) { bytes=$(NF-3) $(NF-2); packets=$(NF-5) $(NF-4) }
-        else { bytes=$(NF-2); packets=$(NF-3) }
-        if (flows+0 > thr+0) print src "\t" dst "\t" flows "\t" packets "\t" bytes
-    }
-' 2>/dev/null) || results_fp=""
+results_fp=$(nfdump_run_analysis "$file" "${NFDUMP_FILTER}" "$traffic_scope" "$NFDUMP_TOP_N" "$thr" "${NFDUMP_TOP_SORT:-record/flows}" 2>/dev/null) || results_fp=""
 count_fp=$([[ -n "$results_fp" ]] && wc -l <<< "$results_fp" || echo 0)
-if [[ -z "$raw" ]]; then status_fp="FAIL (no nfdump data)"; elif (( count_fp > 0 )); then status_fp="OK ($count_fp above thr=$thr)"; echo "$results_fp" | head -5; else status_fp="WARN (0 above thr — normal if traffic low)"; fi
+if (( count_fp > 0 )); then status_fp="OK ($count_fp above thr=$thr)"; echo "$results_fp" | head -5; else status_fp="WARN (0 above thr — normal if traffic low)"; fi
 echo "FLOODPAIRS: $status_fp"
 echo ""
 
@@ -115,19 +108,15 @@ if (( count_stg > 0 )); then status_stg="OK ($count_stg triggers)"; echo "$resul
 echo "STAGING: $status_stg"
 echo ""
 
-# --- NATBURST ---
+# --- NATBURST (XLAT: по canonical TSV, XLAT_IP + XLAT_PORT) ---
 echo "--- NATBURST ---"
-raw_nat=$(nfdump -r "$file" -o raw "(${traffic_scope})" 2>/dev/null) || raw_nat=""
-nat_create=$(echo "${raw_nat:-}" | grep -ci 'nat event[^0-9]*1' 2>/dev/null || echo 0)
-nat_delete=$(echo "${raw_nat:-}" | grep -ci 'nat event[^0-9]*2' 2>/dev/null || echo 0)
-nat_total=$(( nat_create + nat_delete ))
-if (( nat_total > 0 )); then
-    results_nat=$(nat_burst_run "$file" "$traffic_scope" 2>/dev/null) || results_nat=""
-    count_nat=$([[ -n "$results_nat" ]] && wc -l <<< "$results_nat" || echo 0)
-    status_nat="OK (nat events: create=$nat_create delete=$nat_delete, bursts=$count_nat)"
-    [[ -n "$results_nat" ]] && echo "$results_nat" | head -3
+results_nat=$(nat_burst_run "$file" "$traffic_scope" 2>/dev/null) || results_nat=""
+count_nat=$([[ -n "$results_nat" ]] && wc -l <<< "$results_nat" || echo 0)
+if (( count_nat > 0 )); then
+    status_nat="OK ($count_nat XLAT bursts, port_thr=${NAT_BURST_PORT_THRESHOLD:-400})"
+    echo "$results_nat" | head -5
 else
-    status_nat="WARN (no nat events in raw — NAT BURST will not trigger)"
+    status_nat="WARN (0 — no XLAT_IP with uniq_ports > threshold, or no NAT in data)"
 fi
 echo "NATBURST: $status_nat"
 echo ""

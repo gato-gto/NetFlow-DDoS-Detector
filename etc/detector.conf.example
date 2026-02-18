@@ -101,22 +101,13 @@ STAGING_TOP_N=5000
 # STAGING_PKT_SIZE_MIN=1100
 # STAGING_PKT_SIZE_MAX=1500
 
-# ========== NAT BURST (IPFIX Unsampled, FastDPI nat event) ==========
-# Детекция всплесков NAT create/delete — Residential Proxy, боты.
-# Требуется IPFIX с полями: nat event (1=create, 2=delete), src addr.
+# ========== NAT BURST (canonical TSV: XLAT_IP + XLAT_PORT) ==========
+# Детекция по нормализованному потоку: агрегация по XLAT_IP, количество уникальных XLAT_PORT.
+# Срабатывание: uniq_ports > NAT_BURST_PORT_THRESHOLD за интервал.
 ENABLE_DETECT_NAT_BURST=0
 
-NAT_BURST_COUNT_CREATE=1
-NAT_BURST_COUNT_DELETE=1
-NAT_BURST_CREATE_THR=2000
-NAT_BURST_DELETE_THR=2000
-NAT_BURST_TOTAL_THR=3000
-NAT_BURST_IMBALANCE_RATIO_THR=5
-NAT_BURST_IMBALANCE_MIN_TOTAL=200
+NAT_BURST_PORT_THRESHOLD=400
 NAT_BURST_TOP_N=20
-# JSON-mode (vNext 2.0): TH_UNIQ_PORT=400 TH_FLOWS=600 TH_FLOWS_HARD=1500 TH_UNIQ_DST=200
-# NAT_BURST_EXCLUDE_DPORTS="53 853"
-# NAT_BURST_EXCLUDE_PROTO_PORTS="udp:443"
 ALERT_DEDUP_TTL_NATBURST=600
 
 # --- Дедуп по типам (ключи PAIR, ADBSCAN:<SRC>, PROXY:<SRC>, STAGING:<DST>, NATBURST:<SRC>) ---
