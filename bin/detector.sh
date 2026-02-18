@@ -72,7 +72,7 @@ main() {
     log_debug "Config: NFSEN_BASE=$NFSEN_BASE"
     log_debug "Config: NFDUMP_FILTER=$NFDUMP_FILTER"
     log_debug "Config: INTERNAL_NETS=$INTERNAL_NETS"
-    log_debug "Config: NFDUMP_TOP_N=$NFDUMP_TOP_N THRESHOLD_SUSPICIOUS=$THRESHOLD_SUSPICIOUS"
+    log_debug "Config: NFDUMP_TOP_N=$NFDUMP_TOP_N NFDUMP_TOP_SORT=${NFDUMP_TOP_SORT:-record/flows} THRESHOLD_SUSPICIOUS=$THRESHOLD_SUSPICIOUS"
 
     # 1. Find capture file
     local last_file
@@ -116,21 +116,26 @@ main() {
         "$NFDUMP_FILTER" \
         "$INTERNAL_NETS" \
         "$NFDUMP_TOP_N" \
-        "$THRESHOLD_SUSPICIOUS") || {
+        "$THRESHOLD_SUSPICIOUS" \
+        "${NFDUMP_TOP_SORT:-record/flows}") || {
         log_error "nfdump exited with error"
         [[ -n "$nfdump_stderr_file" && -f "$nfdump_stderr_file" ]] && log_debug "nfdump stderr: $(cat "$nfdump_stderr_file")"
         [[ -n "$nfdump_stderr_file" && -f "$nfdump_stderr_file" ]] && rm -f "$nfdump_stderr_file"
         exit 1
     }
     if [[ -n "$nfdump_stderr_file" && -f "$nfdump_stderr_file" ]]; then
-        log_debug "nfdump stderr (summary):"
-        while IFS= read -r line; do log_debug "  $line"; done < "$nfdump_stderr_file"
+        if [[ -s "$nfdump_stderr_file" ]]; then
+            log_debug "nfdump stderr (summary):"
+            while IFS= read -r line; do log_debug "  $line"; done < "$nfdump_stderr_file"
+        else
+            log_debug "nfdump stderr (summary): (empty)"
+        fi
         rm -f "$nfdump_stderr_file"
     fi
     unset -v NFDUMP_DEBUG_STDERR 2>/dev/null || true
 
     local result_lines
-    result_lines=$(echo "$results" | grep -c . || echo 0)
+    result_lines=$(echo "$results" | grep -c . 2>/dev/null) || result_lines=0
     log_debug "nfdump result lines (flows above threshold): $result_lines"
 
     if [[ -z "$results" ]]; then

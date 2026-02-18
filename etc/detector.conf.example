@@ -12,6 +12,8 @@ STATE_DIR="/var/lib/nfdd/state"
 # --- nfdump ---
 NFDUMP_FILTER="proto udp"
 NFDUMP_TOP_N=200
+# Топ по: record/flows (по умолчанию), record/packets, record/bytes
+NFDUMP_TOP_SORT="record/flows"
 
 # --- FLOOD THRESHOLDS (flows per interval) ---
 THRESHOLD_SUSPICIOUS=80000

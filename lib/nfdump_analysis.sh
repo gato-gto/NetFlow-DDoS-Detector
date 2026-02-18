@@ -23,8 +23,9 @@ nfdump_parse_interval() {
     echo "${date_part} ${hour} ${min}"
 }
 
-# nfdump_run_analysis FILEPATH FILTER NETS TOP_N THRESHOLD
+# nfdump_run_analysis FILEPATH FILTER NETS TOP_N THRESHOLD [TOP_SORT]
 # Prints TSV lines: SRC DST FLOWS PKTS BYTES
+# TOP_SORT: record/flows (default), record/packets, record/bytes — order of top-N.
 # When NFDUMP_DEBUG_STDERR is set (DEBUG=1), nfdump stderr is written there for logging.
 nfdump_run_analysis() {
     local file="$1"
@@ -32,11 +33,16 @@ nfdump_run_analysis() {
     local nets="$3"
     local top_n="$4"
     local threshold="$5"
+    local top_sort="${6:-record/flows}"
+    case "$top_sort" in
+        record/flows|record/packets|record/bytes) ;;
+        *) top_sort="record/flows" ;;
+    esac
     local stderr_dest="/dev/null"
     [[ -n "${NFDUMP_DEBUG_STDERR:-}" ]] && stderr_dest="$NFDUMP_DEBUG_STDERR"
 
     nfdump -r "$file" "${filter} and (${nets})" \
-           -A srcip,dstip -s record/flows -n "$top_n" \
+           -A srcip,dstip -s "$top_sort" -n "$top_n" \
         2>"$stderr_dest" \
     | awk -v thr="$threshold" '
         /^[0-9]{4}-[0-9]{2}-[0-9]{2}/ {
