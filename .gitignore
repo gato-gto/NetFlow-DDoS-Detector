@@ -2,6 +2,9 @@
 detector.conf
 etc/detector.conf
 
+# Локальная документация (не выгружать в GitHub)
+docs/
+
 # Резервные копии и временные файлы
 *.bak
 *~
