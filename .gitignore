@@ -1,0 +1,22 @@
+# Конфиг с секретами (токены, пути) — не коммитить
+detector.conf
+etc/detector.conf
+
+# Резервные копии и временные файлы
+*.bak
+*~
+*.tmp
+*.temp
+.*.swp
+.*.swo
+
+# Локальные каталоги runtime (если создаются внутри репозитория)
+/var/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ShellCheck / тесты (опционально)
+.shellcheck/

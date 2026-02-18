@@ -1,0 +1,36 @@
+# ============================================================
+# NetFlow DDoS Detector (NFDD) — Configuration (example)
+# Copy to detector.conf and set your values. Do not commit detector.conf.
+# ============================================================
+
+# --- Paths ---
+NFSEN_BASE="/usr/local/nfsen/profiles-data/live/protocols"
+LOG_FILE="/var/log/nfdd/detector.log"
+AS_CACHE_FILE="/root/as-cache.txt"
+STATE_DIR="/var/lib/nfdd/state"
+
+# --- nfdump ---
+NFDUMP_FILTER="proto udp"
+NFDUMP_TOP_N=200
+
+# --- FLOOD THRESHOLDS (flows per interval) ---
+THRESHOLD_SUSPICIOUS=80000
+THRESHOLD_FLOOD=100000
+THRESHOLD_HEAVY=150000
+THRESHOLD_CRITICAL=300000
+
+# --- INTERNAL NETWORKS (исходящий трафик) ---
+INTERNAL_NETS="(src net 10.0.0.0/8)"
+
+# --- AS Cache TTL (seconds). 86400 = 24 hours ---
+AS_CACHE_TTL=86400
+
+# --- Telegram ---
+TELEGRAM_TOKEN="TELEGRAM_API_TOKEN"
+TELEGRAM_CHAT_ID="TELEGRAM_CHAT_ID"
+TELEGRAM_CHAT_THREAD_ID=""
+# TELEGRAM_CHAT_THREAD_ID — ID топика в супергруппе (опционально). Оставьте пустым для обычного чата.
+TELEGRAM_API_URL="https://api.telegram.org"
+
+# --- Alert deduplication: skip re-alerting same SRC->DST pair within N seconds ---
+ALERT_DEDUP_TTL=300
