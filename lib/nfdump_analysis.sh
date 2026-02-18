@@ -25,16 +25,19 @@ nfdump_parse_interval() {
 
 # nfdump_run_analysis FILEPATH FILTER NETS TOP_N THRESHOLD
 # Prints TSV lines: SRC DST FLOWS PKTS BYTES
+# When NFDUMP_DEBUG_STDERR is set (DEBUG=1), nfdump stderr is written there for logging.
 nfdump_run_analysis() {
     local file="$1"
     local filter="$2"
     local nets="$3"
     local top_n="$4"
     local threshold="$5"
+    local stderr_dest="/dev/null"
+    [[ -n "${NFDUMP_DEBUG_STDERR:-}" ]] && stderr_dest="$NFDUMP_DEBUG_STDERR"
 
     nfdump -r "$file" "${filter} and (${nets})" \
            -A srcip,dstip -s record/flows -n "$top_n" \
-        2>/dev/null \
+        2>"$stderr_dest" \
     | awk -v thr="$threshold" '
         /^[0-9]{4}-[0-9]{2}-[0-9]{2}/ {
             src = $4

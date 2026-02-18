@@ -68,15 +68,32 @@ main() {
     log_info "=== NetFlow DDoS Detector (NFDD) started (dry_run=${DRY_RUN}) ==="
     check_deps
 
+    # Debug: config
+    log_debug "Config: NFSEN_BASE=$NFSEN_BASE"
+    log_debug "Config: NFDUMP_FILTER=$NFDUMP_FILTER"
+    log_debug "Config: INTERNAL_NETS=$INTERNAL_NETS"
+    log_debug "Config: NFDUMP_TOP_N=$NFDUMP_TOP_N THRESHOLD_SUSPICIOUS=$THRESHOLD_SUSPICIOUS"
+
     # 1. Find capture file
     local last_file
     last_file=$(nfdump_find_last_file "$NFSEN_BASE")
+    if [[ "${DEBUG:-0}" == "1" ]]; then
+        local candidates_file_list
+        candidates_file_list=$(find "$NFSEN_BASE" -mindepth 1 -maxdepth 4 -type f -name 'nfcapd.20*' 2>/dev/null | sort)
+        log_debug "Candidate nfcapd files count: $(echo "$candidates_file_list" | grep -c . || echo 0)"
+        log_debug "Candidate files (newest last): $(echo "$candidates_file_list" | tr '\n' ' ')"
+    fi
+
     if [[ -z "$last_file" ]]; then
         log_error "No nfcapd files found under $NFSEN_BASE"
         send_telegram "⚠️ NFDD — ERROR" "Нет nfcapd файлов в ${NFSEN_BASE}"
         exit 1
     fi
     log_info "Using file: $last_file"
+
+    local file_size
+    file_size=$(stat -c '%s' "$last_file" 2>/dev/null || stat -f '%z' "$last_file" 2>/dev/null || echo "?")
+    log_debug "File size: $file_size bytes ($(numfmt --to=iec "$file_size" 2>/dev/null || echo "${file_size} B"))"
 
     # 2. Parse interval metadata
     read -r interval_date interval_hour interval_min \
@@ -85,7 +102,12 @@ main() {
 
     # 3. Run nfdump analysis
     log_info "Running nfdump analysis..."
-    local results
+    local nfdump_stderr_file results
+    nfdump_stderr_file=""
+    if [[ "${DEBUG:-0}" == "1" ]]; then
+        nfdump_stderr_file=$(mktemp)
+        export NFDUMP_DEBUG_STDERR="$nfdump_stderr_file"
+    fi
     results=$(nfdump_run_analysis \
         "$last_file" \
         "$NFDUMP_FILTER" \
@@ -93,8 +115,20 @@ main() {
         "$NFDUMP_TOP_N" \
         "$THRESHOLD_SUSPICIOUS") || {
         log_error "nfdump exited with error"
+        [[ -n "$nfdump_stderr_file" && -f "$nfdump_stderr_file" ]] && log_debug "nfdump stderr: $(cat "$nfdump_stderr_file")"
+        [[ -n "$nfdump_stderr_file" && -f "$nfdump_stderr_file" ]] && rm -f "$nfdump_stderr_file"
         exit 1
     }
+    if [[ -n "$nfdump_stderr_file" && -f "$nfdump_stderr_file" ]]; then
+        log_debug "nfdump stderr (summary):"
+        while IFS= read -r line; do log_debug "  $line"; done < "$nfdump_stderr_file"
+        rm -f "$nfdump_stderr_file"
+    fi
+    unset -v NFDUMP_DEBUG_STDERR 2>/dev/null || true
+
+    local result_lines
+    result_lines=$(echo "$results" | grep -c . || echo 0)
+    log_debug "nfdump result lines (flows above threshold): $result_lines"
 
     if [[ -z "$results" ]]; then
         log_info "No suspicious flows found — all clear."
