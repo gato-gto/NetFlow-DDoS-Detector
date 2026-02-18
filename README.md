@@ -4,6 +4,33 @@
 
 ---
 
+## Системные пакеты
+
+Скрипт при старте проверяет наличие четырёх программ (`check_deps` в `bin/detector.sh`). Остальные команды (`find`, `awk`, `grep`, `cut`, `date`, `mkdir` и т.д.) входят в базовую поставку Linux (GNU coreutils, grep, gawk).
+
+| Программа | Назначение в NFDD | Пакет (Debian/Ubuntu) | Пакет (RHEL/CentOS/Rocky/Fedora) |
+|-----------|-------------------|------------------------|----------------------------------|
+| **nfdump** | Чтение nfcapd, агрегация flow'ов | `nfdump` | `nfdump` (часто из EPEL) |
+| **curl** | Запросы к Telegram Bot API | `curl` | `curl` |
+| **jq** | Сборка JSON для сообщений в Telegram | `jq` | `jq` |
+| **whois** | AS lookup (whois.cymru.com) | `whois` | `whois` |
+
+**Установка:**
+
+```bash
+# Debian / Ubuntu
+sudo apt update
+sudo apt install -y nfdump curl jq whois
+
+# RHEL / CentOS / Rocky / Alma (при необходимости включите EPEL)
+sudo dnf install -y epel-release
+sudo dnf install -y nfdump curl jq whois
+```
+
+Без любой из этих четырёх программ скрипт при запуске выведет `Missing required tools: ...` и завершится.
+
+---
+
 ## Использование
 
 ### Запуск
@@ -41,7 +68,7 @@
 
 ### Первый запуск
 
-1. **Установить зависимости:** `nfdump`, `curl`, `jq`, `whois`.
+1. **Установить системные пакеты** (см. таблицу выше): `nfdump`, `curl`, `jq`, `whois`.
 
 2. **Создать конфиг** (скопировать шаблон при наличии и отредактировать):
    ```bash
@@ -96,12 +123,12 @@ etc/detector.conf.example ← шаблон конфига
 
 ---
 
-## Зависимости
+## Зависимости (кратко)
 
-- `nfdump` — чтение NetFlow
-- `curl` — Telegram API
-- `jq` — JSON для сообщений
-- `whois` — AS lookup (whois.cymru.com)
+- **nfdump** — чтение NetFlow (nfcapd)
+- **curl** — отправка алертов в Telegram API
+- **jq** — безопасная сборка JSON для Telegram
+- **whois** — запросы к whois.cymru.com для определения AS по IP
 
-При отсутствии нужной команды скрипт завершится с ошибкой при старте.
+Подробнее и команды установки — в разделе [Системные пакеты](#системные-пакеты) выше.
 
