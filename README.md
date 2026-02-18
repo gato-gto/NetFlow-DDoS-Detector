@@ -101,10 +101,16 @@ sudo dnf install -y nfdump curl jq whois
   ```bash
    ./bin/detector.sh --dry-run
   ```
-4. **Добавить в cron** — удобно запускать **каждую минуту**: детектор возьмёт файл за предыдущую минуту (когда он уже записан nfcapd), либо при включённом ожидании будет ждать его появления:
-  ```bash
-   * * * * * root /opt/NetFlow-DDoS-Detector/bin/detector.sh
-  ```
+4. **Запуск детектора** — один из вариантов:
+   - **По хуку nfcapd:** nfcapd сам вызывает NFDD после записи каждого интервала. Запуск nfcapd с опцией `-x`:
+     ```bash
+     nfcapd -w /var/log/netflow -p 9995 -t 60 -x /opt/nfdd/bin/nfdd_minute.sh %d/%f %t %i ...
+     ```
+     Хук `bin/nfdd_minute.sh` просто запускает `detector.sh`; новейший файл в `NFSEN_BASE` к этому моменту уже записан.
+   - **По cron** (если nfcapd без хука): каждую минуту:
+     ```bash
+     * * * * * root /opt/nfdd/bin/detector.sh
+     ```
    При необходимости включите в конфиге ожидание файла за предыдущую минуту (см. ниже).
 
 **Режим «файл за предыдущую минуту»:** в конфиге можно задать `WAIT_FOR_PREVIOUS_INTERVAL=1`. Тогда скрипт не берёт просто новейший файл, а ищет файл с именем за **предыдущую минуту** (nfcapd.YYYYMMDDhhmm). Если файла ещё нет (nfcapd пишет с задержкой), он ждёт: раз в `WAIT_RETRY_SEC` секунд повторяет поиск до `WAIT_RETRY_COUNT` раз (например, 10 с × 6 = до 1 минуты). Так при запуске по крону каждую минуту детектор стабильно обрабатывает именно интервал «только что закончившаяся минута».
@@ -117,6 +123,7 @@ sudo dnf install -y nfdump curl jq whois
 
 ```
 bin/detector.sh          ← оркестратор (точка входа)
+bin/nfdd_minute.sh       ← хук для nfcapd (-x): вызывается nfcapd после записи интервала
 lib/log.sh               ← логирование (stdout + файл)
 lib/telegram.sh          ← отправка через Bot API
 lib/as_lookup.sh         ← whois с TTL-кэшем
@@ -213,3 +220,22 @@ etc/detector.conf.example ← шаблон конфига
 - **whois** — запросы к whois.cymru.com для определения AS по IP
 
 Подробнее и команды установки — в разделе [Системные пакеты](#системные-пакеты) выше.
+
+---
+
+## Архитектура vNext (JSON-слой)
+
+Единый поток данных для всех детекторов:
+
+```
+nfdump -r <file> -o json  →  lib/normalize.sh  →  canonical TSV (stdout)
+                                    ↑
+                            lib/json_stream.sh
+```
+
+- **lib/normalize.sh** — приводит JSON к canonical TSV: одна строка на flow, колонки `FIRST_TS DURATION_MS PROTO SRC_IP DST_IP SRC_PORT DST_PORT PACKETS BYTES TCP_FLAGS XLAT_IP XLAT_PORT`. Фильтры: ip_version=4, sampled=0, непустые src/dst. TCP_FLAGS: `HAS_SYN`/`NO_SYN`; XLAT из `src4_xlt_ip`/`src_xlt_port` (0.0.0.0 → пусто).
+- **lib/json_stream.sh** — вызов `nfdump -o json` и передача в `normalize_flows`. Использование: `json_stream <nfcapd_file> [filter]`.
+- **lib/nfdump_analysis.sh** — поиск файлов, `build_traffic_scope`; все функции анализа (FLOOD, ADB, Proxy, Staging, NAT BURST) работают через `json_stream` и разбор canonical TSV. Режимы `-o long`/`-o raw` и парсинг awk по тексту nfdump удалены.
+- **lib/detectors/nat_burst.sh** — NAT BURST по XLAT: агрегация по `XLAT_IP`, счёт уникальных `XLAT_PORT`; срабатывание при `uniq_ports > NAT_BURST_PORT_THRESHOLD`. Конфиг: `NAT_BURST_PORT_THRESHOLD`, `NAT_BURST_TOP_N`, `ALERT_DEDUP_TTL_NATBURST`.
+
+Дополнительно: **lib/json_flow.sh** — альтернативный слой (NDJSON FLOW_NDJSON_V1) для сценариев, где нужен полный набор полей; **bin/verify_analysis.sh** и **bin/verify_analysis.sh --json** используют canonical TSV и при необходимости NDJSON.
