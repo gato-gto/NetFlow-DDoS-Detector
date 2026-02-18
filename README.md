@@ -16,7 +16,9 @@
 - **Доставка** — отправка сводного сообщения в Telegram (в чат или в топик супергруппы), с возможностью dry-run и без хранения секретов в коде.
 - **Простота** — один конфиг, четыре внешние зависимости (nfdump, curl, jq, whois), запуск по cron; логи и состояние в настраиваемых каталогах.
 
-Итог: быстрый и прозрачный ранний индикатор UDP-флуда по уже имеющимся данным NetFlow (nfcapd/nfdump, в т.ч. из NfSen) с минимумом зависимостей и без открытых портов.
+Итог: быстрый и прозрачный ранний индикатор UDP-флуда и ботнет-активности (Kimwolf-паттерны) по уже имеющимся данным NetFlow (nfcapd/nfdump, в т.ч. из NfSen) с минимумом зависимостей и без открытых портов.
+
+**Режимы детекции (vNext):** помимо пар SRC→DST (flood) доступны: **ADB Scan** (TCP/5555 SYN, fan-out), **Proxy microflows** (короткие TCP 80/443/8080), **UDP Staging** (много SRC → один DST). Включение и пороги задаются в конфиге; одно сообщение в Telegram может содержать секции по всем включённым режимам.
 
 ---
 
@@ -118,9 +120,11 @@ bin/detector.sh          ← оркестратор (точка входа)
 lib/log.sh               ← логирование (stdout + файл)
 lib/telegram.sh          ← отправка через Bot API
 lib/as_lookup.sh         ← whois с TTL-кэшем
-lib/dedup.sh             ← дедупликация алертов
-lib/nfdump_analysis.sh   ← работа с nfdump
-lib/classify.sh          ← классификация угрозы
+lib/dedup.sh             ← дедупликация по ключам (PAIR, ADBSCAN, PROXY, STAGING)
+lib/nfdump_analysis.sh   ← nfdump, агрегация, анализаторы ADB/Proxy/Staging
+lib/classify.sh          ← классификация угрозы (FLOOD PAIRS)
+lib/classify_ext.sh      ← метки для ADB SCAN, PROXY, UDP STAGING
+lib/detectors/nat_burst.sh ← NAT BURST (IPFIX nat event)
 etc/detector.conf        ← конфиг (не в git — см. .gitignore)
 etc/detector.conf.example ← шаблон конфига
 ```
@@ -131,7 +135,13 @@ etc/detector.conf.example ← шаблон конфига
 
 ## Как работает детектирование
 
-**Полное описание:** [docs/КАК_РАБОТАЕТ.md](docs/КАК_РАБОТАЕТ.md) — в том числе раздел [«Как работает аналитика»](docs/КАК_РАБОТАЕТ.md#4-как-работает-аналитика) (фильтр → агрегация → топ-N → порог → классификация), пошаговый поток, конфиг, дедуп, схема данных.
+**Полное описание:** [docs/КАК_РАБОТАЕТ.md](docs/КАК_РАБОТАЕТ.md) — пошаговый поток, конфиг, дедуп, схема данных.
+
+**Roadmap vNext (Kimwolf, IPFIX Unsampled, NAT):** [docs/ROADMAP_VNEXT.md](docs/ROADMAP_VNEXT.md).
+
+**Статус плана vNext 2.0:** [docs/PLAN_VNEXT_2.0_STATUS.md](docs/PLAN_VNEXT_2.0_STATUS.md).
+
+**Self-test:** `./bin/verify_analysis.sh [file]` — проверка всех детекторов, OK/WARN/FAIL по модулям. С `VERIFY_LOW_THRESHOLDS=1` — заниженные пороги ADB/STAGING для теста.
 
 Кратко:
 
@@ -187,6 +197,7 @@ etc/detector.conf.example ← шаблон конфига
 - `INTERNAL_NETS`, `INTERNAL_CIDR`, `THREAT_SRC_NETS` — область трафика (исходящий или в обе стороны)
 - `THRESHOLD_SUSPICIOUS` — порог по числу flow'ов для алерта
 - `ALERT_DEDUP_TTL` — секунды, в течение которых не повторять алерт по одной паре SRC→DST
+- **Режимы vNext:** `ENABLE_DETECT_FLOOD_PAIRS`, `ENABLE_DETECT_ADB_SCAN`, `ENABLE_DETECT_PROXY_MICROFLOWS`, `ENABLE_DETECT_UDP_STAGING`, `ENABLE_DETECT_NAT_BURST` (0/1); параметры `ADB_SCAN_*`, `PROXY_*`, `STAGING_*`, `NAT_BURST_*`, отдельные TTL дедупа по типам (`ALERT_DEDUP_TTL_NATBURST` и др.)
 
 Все параметры перечислены в `etc/detector.conf.example` с комментариями.
 

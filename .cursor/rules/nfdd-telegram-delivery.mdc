@@ -1,0 +1,16 @@
+---
+description: NFDD vNext — доставка алертов в Telegram (контракт, дедуп, лимиты)
+globs: bin/detector.sh, lib/telegram.sh, lib/dedup.sh, lib/alert_items.sh
+alwaysApply: false
+---
+
+# NFDD Telegram delivery (vNext)
+
+Полная спецификация: **docs/TELEGRAM_DELIVERY_VNEXT.md**.
+
+- **Детекторы** выводят в stdout items в формате ITEMS_V1 (21 колонка TSV). Доставкой и лимитами не занимаются.
+- **Дедуп:** `dedup_check_key KEY TTL` — **return 0 = можно слать**, **return 1 = подавить**. Записывать ключ только для реально отправляемых items (`dedup_record_key`).
+- **Оркестратор** (bin/detector.sh): collect → count_found → apply_dedup → limit_items (sort + top-N по типу) → render_message (HTML, html_escape для AS_NAME) → send_or_dryrun. При total_sent==0 — лог «All clear (no alerts)», не слать. При ошибке Telegram — exit 2.
+- **Subject:** числа F/P/R/S — после дедупа и лимитов (сколько строк реально в сообщении).
+- **Лимиты:** ALERT_MAX_ITEMS_* по типам, ALERT_MAX_CHARS=3500; при превышении — «… +N more» и «…(truncated)».
+- **Сортировка:** lib/alert_items.sh `item_sort_keys TYPE` (FLOOD: SEV, FLOWS, BYTES, PKTS; и т.д.).

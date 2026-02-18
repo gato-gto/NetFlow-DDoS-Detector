@@ -7,9 +7,7 @@
 log_init() {
     local log_dir
     log_dir="$(dirname "${LOG_FILE}")"
-    if [[ ! -d "$log_dir" ]]; then
-        mkdir -p "$log_dir" || { echo "ERROR: cannot create log dir $log_dir" >&2; exit 1; }
-    fi
+    mkdir -p "$log_dir" 2>/dev/null || { echo "ERROR: cannot create log dir $log_dir" >&2; exit 1; }
 }
 
 _log() {

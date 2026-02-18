@@ -47,5 +47,71 @@ TELEGRAM_CHAT_THREAD_ID=""
 # TELEGRAM_CHAT_THREAD_ID — ID топика в супергруппе (опционально). Оставьте пустым для обычного чата.
 TELEGRAM_API_URL="https://api.telegram.org"
 
-# --- Alert deduplication: skip re-alerting same SRC->DST pair within N seconds ---
+# --- Alert deduplication: skip re-alerting same key within N seconds ---
 ALERT_DEDUP_TTL=300
+
+# --- Delivery: max items per block and message length (Telegram ~4096) ---
+ALERT_MAX_ITEMS_FLOOD=20
+ALERT_MAX_ITEMS_PROP=10
+ALERT_MAX_ITEMS_RPROXY=10
+ALERT_MAX_ITEMS_STAGE=10
+ALERT_MAX_CHARS=3500
+# SEND_OK=0 — при отсутствии алертов Telegram не отправлять (по умолчанию)
+# SEND_OK=1 — опционально отправлять "OK" раз в N минут (не реализовано в v1)
+# По типам (если не заданы — используется ALERT_DEDUP_TTL для PAIR)
+ALERT_DEDUP_TTL_PAIR=300
+ALERT_DEDUP_TTL_ADBSCAN=1800
+ALERT_DEDUP_TTL_PROXY=900
+ALERT_DEDUP_TTL_STAGING=300
+
+# ========== NFDD vNext: Kimwolf-паттерны (дополнительные режимы) ==========
+# Включение режимов (0 = выкл, 1 = вкл). По умолчанию только FLOOD_PAIRS.
+ENABLE_DETECT_FLOOD_PAIRS=1
+ENABLE_DETECT_PROXY_MICROFLOWS=1
+
+# --- Optional Kimwolf-style detectors (ADB fan-out, UDP many→one) ---
+ENABLE_DETECT_ADB_SCAN=0
+ENABLE_DETECT_UDP_STAGING=0
+
+ADB_SCAN_PORT=5555
+ADB_SCAN_UNIQUE_DST_PER_MIN=50
+ADB_SCAN_TOP_N=5000
+# ADB: без привязки к SYN (flags в экспортере могут быть 0x00)
+
+# --- ADB Scan (legacy: с SYN, если нужен жёсткий фильтр) ---
+ADB_SCAN_MAX_BYTES_PER_FLOW=300
+# ADB_SCAN_NFDUMP_FILTER="proto tcp and dst port 5555 and tcp flags syn"
+
+# --- Proxy microflows (Residential Proxy): короткие TCP 80/443/8080 ---
+PROXY_PORTS="80 443 8080"
+PROXY_MAX_DURATION_SEC=2
+PROXY_MAX_PKTS_PER_FLOW=10
+PROXY_MIN_FLOWS_PER_SEC=500
+PROXY_SHORT_RATIO_PCT=80
+PROXY_TOP_N=20000
+# Без duration в NetFlow используем только pkts/flows (микрофлоу по pkts_per_flow)
+
+# --- UDP Staging (many→one): много SRC → один DST ---
+STAGING_MIN_UNIQUE_SRC=30
+STAGING_MIN_TOTAL_FLOWS=50000
+STAGING_TOP_N=5000
+# STAGING_PKT_SIZE_MIN=1100
+# STAGING_PKT_SIZE_MAX=1500
+
+# ========== NAT BURST (IPFIX Unsampled, FastDPI nat event) ==========
+# Детекция всплесков NAT create/delete — Residential Proxy, боты.
+# Требуется IPFIX с полями: nat event (1=create, 2=delete), src addr.
+ENABLE_DETECT_NAT_BURST=0
+
+NAT_BURST_COUNT_CREATE=1
+NAT_BURST_COUNT_DELETE=1
+NAT_BURST_CREATE_THR=2000
+NAT_BURST_DELETE_THR=2000
+NAT_BURST_TOTAL_THR=3000
+NAT_BURST_IMBALANCE_RATIO_THR=5
+NAT_BURST_IMBALANCE_MIN_TOTAL=200
+NAT_BURST_TOP_N=20
+ALERT_DEDUP_TTL_NATBURST=600
+
+# --- Дедуп по типам (ключи PAIR, ADBSCAN:<SRC>, PROXY:<SRC>, STAGING:<DST>, NATBURST:<SRC>) ---
+# Заданы выше в блоке ALERT_DEDUP_TTL_*

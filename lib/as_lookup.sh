@@ -31,6 +31,8 @@ as_lookup() {
         print ($1==""?"AS-?":$1) " " ($7==""?"UNKNOWN":$7)
     }')
     asn="${result%% *}"; asname="${result#* }"
+    [[ -z "$asn" ]] && asn="AS-?"
+    [[ -z "$asname" ]] && asname="UNKNOWN"
 
     mkdir -p "$(dirname "$AS_CACHE_FILE")"
     printf '%s\t%s\t%s\t%s\n' "$ip" "$now" "$asn" "$asname" >> "$AS_CACHE_FILE"
