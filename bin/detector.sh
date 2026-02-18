@@ -81,7 +81,10 @@ main() {
         local candidates_file_list
         candidates_file_list=$(find "$NFSEN_BASE" -mindepth 1 -maxdepth 4 -type f -name 'nfcapd.20*' 2>/dev/null | sort)
         log_debug "Candidate nfcapd files count: $(echo "$candidates_file_list" | grep -c . || echo 0)"
-        log_debug "Candidate files (newest last): $(echo "$candidates_file_list" | tr '\n' ' ')"
+        log_debug "Candidate files (newest last):"
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && log_debug "  $line"
+        done <<< "$candidates_file_list"
     fi
 
     if [[ -z "$last_file" ]]; then
