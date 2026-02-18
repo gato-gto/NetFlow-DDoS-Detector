@@ -7,15 +7,12 @@
 log_init() {
     local log_dir
     log_dir="$(dirname "${LOG_FILE}")"
-    if [[ ! -d "$log_dir" ]]; then
-        mkdir -p "$log_dir" || { echo "ERROR: cannot create log dir $log_dir" >&2; exit 1; }
-    fi
+    mkdir -p "$log_dir" 2>/dev/null || { echo "ERROR: cannot create log dir $log_dir" >&2; exit 1; }
 }
 
 _log() {
-    local level="$1"; shift
-    local ts
-    ts="$(date '+%Y-%m-%d %H:%M:%S')"
+    local level="$1" ts; shift
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
     local msg="[${ts}] [${level}] $*"
     echo "$msg"
     [[ -n "${LOG_FILE:-}" ]] && echo "$msg" >> "$LOG_FILE"

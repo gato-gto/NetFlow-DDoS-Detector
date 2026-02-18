@@ -6,12 +6,20 @@
 # --- Paths ---
 NFSEN_BASE="/usr/local/nfsen/profiles-data/live/protocols"
 LOG_FILE="/var/log/nfdd/detector.log"
+
+# При запуске по крону каждую минуту: ждать файл за предыдущую минуту (nfcapd.YYYYMMDDhhmm).
+# 1 = ждать по WAIT_RETRY_SEC до WAIT_RETRY_COUNT раз; 0 = брать просто новейший файл.
+WAIT_FOR_PREVIOUS_INTERVAL=0
+WAIT_RETRY_SEC=10
+WAIT_RETRY_COUNT=6
 AS_CACHE_FILE="/root/as-cache.txt"
 STATE_DIR="/var/lib/nfdd/state"
 
 # --- nfdump ---
 NFDUMP_FILTER="proto udp"
 NFDUMP_TOP_N=200
+# Топ по: record/flows (по умолчанию), record/packets, record/bytes
+NFDUMP_TOP_SORT="record/flows"
 
 # --- FLOOD THRESHOLDS (flows per interval) ---
 THRESHOLD_SUSPICIOUS=80000
@@ -19,8 +27,15 @@ THRESHOLD_FLOOD=100000
 THRESHOLD_HEAVY=150000
 THRESHOLD_CRITICAL=300000
 
-# --- INTERNAL NETWORKS (исходящий трафик) ---
+# --- TRAFFIC SCOPE ---
+# Только исходящий (по умолчанию): INTERNAL_NETS — наши сети как источник (LAN→WAN).
 INTERNAL_NETS="(src net 10.0.0.0/8)"
+
+# В обе стороны: задайте THREAT_SRC_NETS — тогда INTERNAL_NETS игнорируется.
+#   • Исходящий: наши хосты (INTERNAL_CIDR) → любой dst
+#   • Входящий:  источники из THREAT_SRC_NETS → наши сети (INTERNAL_CIDR)
+# INTERNAL_CIDR="10.0.0.0/8"
+# THREAT_SRC_NETS="src net 151.242.2.0/24 or src net 78.108.178.0/24 or src net 185.55.173.0/24 or src net 194.46.59.0/24 or src net 43.153.0.0/18 or src net 43.153.64.0/18 or src host 43.173.127.241 or src net 104.171.170.0/24 or src net 107.173.196.0/24 or src net 64.188.68.0/24"
 
 # --- AS Cache TTL (seconds). 86400 = 24 hours ---
 AS_CACHE_TTL=86400
@@ -32,5 +47,71 @@ TELEGRAM_CHAT_THREAD_ID=""
 # TELEGRAM_CHAT_THREAD_ID — ID топика в супергруппе (опционально). Оставьте пустым для обычного чата.
 TELEGRAM_API_URL="https://api.telegram.org"
 
-# --- Alert deduplication: skip re-alerting same SRC->DST pair within N seconds ---
+# --- Alert deduplication: skip re-alerting same key within N seconds ---
 ALERT_DEDUP_TTL=300
+
+# --- Delivery: max items per block and message length (Telegram ~4096) ---
+ALERT_MAX_ITEMS_FLOOD=20
+ALERT_MAX_ITEMS_PROP=10
+ALERT_MAX_ITEMS_RPROXY=10
+ALERT_MAX_ITEMS_STAGE=10
+ALERT_MAX_CHARS=3500
+# SEND_OK=0 — при отсутствии алертов Telegram не отправлять (по умолчанию)
+# SEND_OK=1 — опционально отправлять "OK" раз в N минут (не реализовано в v1)
+# По типам (если не заданы — используется ALERT_DEDUP_TTL для PAIR)
+ALERT_DEDUP_TTL_PAIR=300
+ALERT_DEDUP_TTL_ADBSCAN=1800
+ALERT_DEDUP_TTL_PROXY=900
+ALERT_DEDUP_TTL_STAGING=300
+
+# ========== NFDD vNext: Kimwolf-паттерны (дополнительные режимы) ==========
+# Включение режимов (0 = выкл, 1 = вкл). По умолчанию только FLOOD_PAIRS.
+ENABLE_DETECT_FLOOD_PAIRS=1
+ENABLE_DETECT_PROXY_MICROFLOWS=1
+
+# --- Optional Kimwolf-style detectors (ADB fan-out, UDP many→one) ---
+ENABLE_DETECT_ADB_SCAN=0
+ENABLE_DETECT_UDP_STAGING=0
+
+ADB_SCAN_PORT=5555
+ADB_SCAN_UNIQUE_DST_PER_MIN=50
+ADB_SCAN_TOP_N=5000
+# ADB: без привязки к SYN (flags в экспортере могут быть 0x00)
+
+# --- ADB Scan (legacy: с SYN, если нужен жёсткий фильтр) ---
+ADB_SCAN_MAX_BYTES_PER_FLOW=300
+# ADB_SCAN_NFDUMP_FILTER="proto tcp and dst port 5555 and tcp flags syn"
+
+# --- Proxy microflows (Residential Proxy): короткие TCP 80/443/8080 ---
+PROXY_PORTS="80 443 8080"
+PROXY_MAX_DURATION_SEC=2
+PROXY_MAX_PKTS_PER_FLOW=10
+PROXY_MIN_FLOWS_PER_SEC=500
+PROXY_SHORT_RATIO_PCT=80
+PROXY_TOP_N=20000
+# Без duration в NetFlow используем только pkts/flows (микрофлоу по pkts_per_flow)
+
+# --- UDP Staging (many→one): много SRC → один DST ---
+STAGING_MIN_UNIQUE_SRC=30
+STAGING_MIN_TOTAL_FLOWS=50000
+STAGING_TOP_N=5000
+# STAGING_PKT_SIZE_MIN=1100
+# STAGING_PKT_SIZE_MAX=1500
+
+# ========== NAT BURST (IPFIX Unsampled, FastDPI nat event) ==========
+# Детекция всплесков NAT create/delete — Residential Proxy, боты.
+# Требуется IPFIX с полями: nat event (1=create, 2=delete), src addr.
+ENABLE_DETECT_NAT_BURST=0
+
+NAT_BURST_COUNT_CREATE=1
+NAT_BURST_COUNT_DELETE=1
+NAT_BURST_CREATE_THR=2000
+NAT_BURST_DELETE_THR=2000
+NAT_BURST_TOTAL_THR=3000
+NAT_BURST_IMBALANCE_RATIO_THR=5
+NAT_BURST_IMBALANCE_MIN_TOTAL=200
+NAT_BURST_TOP_N=20
+ALERT_DEDUP_TTL_NATBURST=600
+
+# --- Дедуп по типам (ключи PAIR, ADBSCAN:<SRC>, PROXY:<SRC>, STAGING:<DST>, NATBURST:<SRC>) ---
+# Заданы выше в блоке ALERT_DEDUP_TTL_*
