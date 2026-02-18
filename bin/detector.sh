@@ -55,6 +55,7 @@ source "${SCRIPT_DIR}/lib/telegram.sh"
 source "${SCRIPT_DIR}/lib/as_lookup.sh"
 source "${SCRIPT_DIR}/lib/dedup.sh"
 source "${SCRIPT_DIR}/lib/nfdump_analysis.sh"
+source "${SCRIPT_DIR}/lib/json_flow.sh"
 source "${SCRIPT_DIR}/lib/classify.sh"
 source "${SCRIPT_DIR}/lib/classify_ext.sh"
 source "${SCRIPT_DIR}/lib/alert_items.sh"
@@ -126,6 +127,27 @@ main() {
         exit 1
     fi
     log_info "Using file: $last_file"
+
+    # Режим анализа: json (FLOW_NDJSON_V1 в файл для детекторов vNext) или legacy (nfdump -A/text).
+    export NFDUMP_FORMAT="${NFDUMP_FORMAT:-json}"
+    export FLOWS_NDJSON=""
+    if [[ "$NFDUMP_FORMAT" == "json" ]]; then
+        export INTERNAL_CIDR="${INTERNAL_CIDR:-10.0.0.0/8}"
+        local tmpdir="${TMPDIR:-/tmp}"
+        [[ -d "$tmpdir" ]] || tmpdir="/tmp"
+        FLOWS_NDJSON="${tmpdir}/nfdd_flows_$$.ndjson"
+        export FLOWS_NDJSON
+        log_debug "Building FLOW_NDJSON_V1: $FLOWS_NDJSON"
+        nf_stream_norm "$last_file" > "$FLOWS_NDJSON" || true
+        if [[ ! -s "$FLOWS_NDJSON" ]]; then
+            log_warn "JSON normalizer produced no output; falling back to legacy format for this run"
+            export NFDUMP_FORMAT="legacy"
+            rm -f "$FLOWS_NDJSON"
+            FLOWS_NDJSON=""
+        else
+            log_debug "FLOW_NDJSON_V1 lines: $(wc -l < "$FLOWS_NDJSON")"
+        fi
+    fi
 
     local file_size
     file_size=$(stat -c '%s' "$last_file" 2>/dev/null || stat -f '%z' "$last_file" 2>/dev/null || echo "?")
@@ -441,15 +463,18 @@ main() {
         log_info "  Subject: ${subject}"
         log_info "  Body:"
         echo "$body"
+        rm -f "${FLOWS_NDJSON:-}"
         log_info "=== Detector finished (dry-run) ==="
         exit 0
     fi
 
     log_info "Sending Telegram alert (sent=${total_sent} suppressed=${total_supp})..."
     if ! send_telegram "$subject" "$body"; then
+        rm -f "${FLOWS_NDJSON:-}"
         log_error "Telegram delivery failed — exit 2"
         exit 2
     fi
+    rm -f "${FLOWS_NDJSON:-}"
     log_info "=== Detector finished ==="
 }
 

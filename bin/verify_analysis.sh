@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # verify_analysis.sh — self-test цепочки детекторов
 # Запуск: ./bin/verify_analysis.sh [nfcapd-файл]
+#         ./bin/verify_analysis.sh --json [nfcapd-файл]  — диагностика по FLOW_NDJSON_V1 (top src→dst, top src по uniq nat_src_port, microflows).
 # При VERIFY_LOW_THRESHOLDS=1 использует заниженные пороги для ADB/STAGING.
 
 set -euo pipefail
@@ -12,7 +13,15 @@ CONFIG_FILE="${SCRIPT_DIR}/etc/detector.conf"
 source "$CONFIG_FILE"
 source "${SCRIPT_DIR}/lib/log.sh"
 source "${SCRIPT_DIR}/lib/nfdump_analysis.sh"
+source "${SCRIPT_DIR}/lib/json_flow.sh"
 [[ -f "${SCRIPT_DIR}/lib/detectors/nat_burst.sh" ]] && source "${SCRIPT_DIR}/lib/detectors/nat_burst.sh"
+
+# Режим --json: диагностика по нормализованному NDJSON (без legacy-детекторов).
+JSON_MODE=0
+if [[ "${1:-}" == "--json" ]]; then
+    JSON_MODE=1
+    shift
+fi
 
 # Lowered thresholds for self-test (when VERIFY_LOW_THRESHOLDS=1)
 [[ "${VERIFY_LOW_THRESHOLDS:-0}" == "1" ]] && {
@@ -28,6 +37,43 @@ if [[ -z "$file" ]]; then
     [[ -z "$file" ]] && file=$(nfdump_find_last_file "$NFSEN_BASE")
 fi
 [[ -z "$file" || ! -f "$file" ]] && { echo "ERROR: no nfcapd file found" >&2; exit 1; }
+
+# ----- Режим --json: три диагностических блока по FLOW_NDJSON_V1 -----
+if (( JSON_MODE == 1 )); then
+    export INTERNAL_CIDR="${INTERNAL_CIDR:-10.0.0.0/8}"
+    ndjson_tmp=$(mktemp)
+    trap 'rm -f "$ndjson_tmp"' EXIT
+    nf_stream_norm "$file" > "$ndjson_tmp" || { echo "ERROR: nf_stream_norm failed" >&2; exit 1; }
+    line_count=$(wc -l < "$ndjson_tmp")
+    echo "=== NFDD verify_analysis --json (FLOW_NDJSON_V1) ==="
+    echo "File: $file | NDJSON lines: $line_count"
+    echo ""
+
+    # 1) Top src→dst по количеству flow'ов (строк)
+    echo "--- Top src→dst (by flow count) ---"
+    jq -r 'select(.src_ip != "" and .dst_ip != "") | "\(.src_ip)\t\(.dst_ip)"' "$ndjson_tmp" 2>/dev/null \
+        | sort | uniq -c | sort -rn | head -15 \
+        | awk -v OFS='\t' '{ print $1, $2, $3 }'
+    echo ""
+
+    # 2) Top src по количеству уникальных nat_src_port (диагностика NAT burst)
+    echo "--- Top src by uniq nat_src_port (NAT burst diagnostic) ---"
+    jq -r 'select(.nat_src_port != null and .nat_src_port != 0) | "\(.src_ip)\t\(.nat_src_port)"' "$ndjson_tmp" 2>/dev/null \
+        | sort -u | cut -f1 | sort | uniq -c | sort -rn | head -15 \
+        | awk -v OFS='\t' '{ print $1, $2 }'
+    echo ""
+
+    # 3) Top microflows: dur_ms <= X, bytes <= Y (по умолчанию 2000 ms, 500 bytes)
+    VERIFY_MICRO_DUR_MS="${VERIFY_MICRO_DUR_MS:-2000}"
+    VERIFY_MICRO_BYTES="${VERIFY_MICRO_BYTES:-500}"
+    echo "--- Microflows (dur_ms <= ${VERIFY_MICRO_DUR_MS}, bytes <= ${VERIFY_MICRO_BYTES}) ---"
+    jq -r --argjson dur "${VERIFY_MICRO_DUR_MS}" --argjson bytes "${VERIFY_MICRO_BYTES}" \
+        'select(.dur_ms <= $dur and .bytes <= $bytes) | "\(.src_ip)\t\(.dst_ip)\t\(.dur_ms)\t\(.bytes)\t\(.pkts)"' "$ndjson_tmp" 2>/dev/null \
+        | head -20
+    echo ""
+    echo "========== END (--json) =========="
+    exit 0
+fi
 
 status_fp="" status_adb="" status_stg="" status_nat=""
 raw=$(nfdump -r "$file" "${NFDUMP_FILTER} and (${traffic_scope})" \

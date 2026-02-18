@@ -16,6 +16,8 @@ AS_CACHE_FILE="/root/as-cache.txt"
 STATE_DIR="/var/lib/nfdd/state"
 
 # --- nfdump ---
+# Формат анализа: json (nfdump -o json + нормализатор FLOW_NDJSON_V1, единый вход для детекторов vNext) или legacy (nfdump -A text).
+NFDUMP_FORMAT="json"
 NFDUMP_FILTER="proto udp"
 NFDUMP_TOP_N=200
 # Топ по: record/flows (по умолчанию), record/packets, record/bytes
@@ -35,6 +37,7 @@ INTERNAL_NETS="(src net 10.0.0.0/8)"
 #   • Исходящий: наши хосты (INTERNAL_CIDR) → любой dst
 #   • Входящий:  источники из THREAT_SRC_NETS → наши сети (INTERNAL_CIDR)
 # INTERNAL_CIDR="10.0.0.0/8"
+# Пример ISP (Kimwolf): 10.32.0.0/14, 93.170.220.0/22, 92.253.192.0/22
 # THREAT_SRC_NETS="src net 151.242.2.0/24 or src net 78.108.178.0/24 or src net 185.55.173.0/24 or src net 194.46.59.0/24 or src net 43.153.0.0/18 or src net 43.153.64.0/18 or src host 43.173.127.241 or src net 104.171.170.0/24 or src net 107.173.196.0/24 or src net 64.188.68.0/24"
 
 # --- AS Cache TTL (seconds). 86400 = 24 hours ---
@@ -111,6 +114,9 @@ NAT_BURST_TOTAL_THR=3000
 NAT_BURST_IMBALANCE_RATIO_THR=5
 NAT_BURST_IMBALANCE_MIN_TOTAL=200
 NAT_BURST_TOP_N=20
+# JSON-mode (vNext 2.0): TH_UNIQ_PORT=400 TH_FLOWS=600 TH_FLOWS_HARD=1500 TH_UNIQ_DST=200
+# NAT_BURST_EXCLUDE_DPORTS="53 853"
+# NAT_BURST_EXCLUDE_PROTO_PORTS="udp:443"
 ALERT_DEDUP_TTL_NATBURST=600
 
 # --- Дедуп по типам (ключи PAIR, ADBSCAN:<SRC>, PROXY:<SRC>, STAGING:<DST>, NATBURST:<SRC>) ---

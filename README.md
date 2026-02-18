@@ -141,6 +141,8 @@ etc/detector.conf.example ← шаблон конфига
 
 **Статус плана vNext 2.0:** [docs/PLAN_VNEXT_2.0_STATUS.md](docs/PLAN_VNEXT_2.0_STATUS.md).
 
+**Архитектура vNext 2.0 (JSON ingest):** [docs/ARCHITECTURE_VNEXT_2.0.md](docs/ARCHITECTURE_VNEXT_2.0.md) — нормализация, маппинг полей, [docs/NAT_BURST_TZ_JSON.md](docs/NAT_BURST_TZ_JSON.md) — NAT BURST (event/heuristic режимы).
+
 **Self-test:** `./bin/verify_analysis.sh [file]` — проверка всех детекторов, OK/WARN/FAIL по модулям. С `VERIFY_LOW_THRESHOLDS=1` — заниженные пороги ADB/STAGING для теста.
 
 Кратко:
