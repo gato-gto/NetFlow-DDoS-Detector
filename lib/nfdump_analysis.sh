@@ -3,9 +3,10 @@
 
 # nfdump_find_last_file BASE_DIR
 # Prints path to the newest nfcapd.20* file, or empty string.
+# Supports: flat layout (base/nfcapd.20*) and NfSen layout (base/.../YYYY/MM/DD/nfcapd.20*).
 nfdump_find_last_file() {
     local base="$1"
-    find "$base" -mindepth 4 -maxdepth 4 -type f -name 'nfcapd.20*' \
+    find "$base" -mindepth 1 -maxdepth 4 -type f -name 'nfcapd.20*' \
         | sort | tail -n1
 }
 
