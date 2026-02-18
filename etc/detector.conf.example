@@ -6,6 +6,12 @@
 # --- Paths ---
 NFSEN_BASE="/usr/local/nfsen/profiles-data/live/protocols"
 LOG_FILE="/var/log/nfdd/detector.log"
+
+# При запуске по крону каждую минуту: ждать файл за предыдущую минуту (nfcapd.YYYYMMDDhhmm).
+# 1 = ждать по WAIT_RETRY_SEC до WAIT_RETRY_COUNT раз; 0 = брать просто новейший файл.
+WAIT_FOR_PREVIOUS_INTERVAL=0
+WAIT_RETRY_SEC=10
+WAIT_RETRY_COUNT=6
 AS_CACHE_FILE="/root/as-cache.txt"
 STATE_DIR="/var/lib/nfdd/state"
 

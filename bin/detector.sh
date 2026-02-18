@@ -76,7 +76,33 @@ main() {
 
     # 1. Find capture file
     local last_file
-    last_file=$(nfdump_find_last_file "$NFSEN_BASE")
+    if [[ "${WAIT_FOR_PREVIOUS_INTERVAL:-0}" == "1" ]]; then
+        local prev_ts expected_file
+        prev_ts=$(nfdump_expected_previous_minute)
+        expected_file="nfcapd.${prev_ts}"
+        log_info "Waiting for previous interval file: $expected_file (retry every ${WAIT_RETRY_SEC:-10}s, up to ${WAIT_RETRY_COUNT:-6} times)"
+        local retries=0
+        local max_retries="${WAIT_RETRY_COUNT:-6}"
+        local retry_sec="${WAIT_RETRY_SEC:-10}"
+        while true; do
+            last_file=$(nfdump_find_file_for_interval "$NFSEN_BASE" "$prev_ts")
+            if [[ -n "$last_file" ]]; then
+                log_info "Found file for previous minute: $last_file"
+                break
+            fi
+            (( retries++ )) || true
+            if (( retries >= max_retries )); then
+                log_error "File for previous interval ($expected_file) not found after ${max_retries} retries"
+                send_telegram "⚠️ NFDD — ERROR" "Файл за предыдущую минуту (${expected_file}) не найден в ${NFSEN_BASE}"
+                exit 1
+            fi
+            log_info "  Retry $retries/$max_retries: waiting ${retry_sec}s..."
+            sleep "$retry_sec"
+        done
+    else
+        last_file=$(nfdump_find_last_file "$NFSEN_BASE")
+    fi
+
     if [[ "${DEBUG:-0}" == "1" ]]; then
         local candidates_file_list
         candidates_file_list=$(find "$NFSEN_BASE" -mindepth 1 -maxdepth 4 -type f -name 'nfcapd.20*' 2>/dev/null | sort)

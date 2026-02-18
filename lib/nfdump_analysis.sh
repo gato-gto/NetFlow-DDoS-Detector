@@ -10,6 +10,21 @@ nfdump_find_last_file() {
         | sort | tail -n1
 }
 
+# nfdump_expected_previous_minute
+# Prints timestamp for "previous minute" in nfcapd format: YYYYMMDDhhmm (e.g. 202602181714).
+# Uses GNU date -d '1 minute ago' or BSD date -v-1M.
+nfdump_expected_previous_minute() {
+    date -d '1 minute ago' +%Y%m%d%H%M 2>/dev/null || date -v-1M +%Y%m%d%H%M 2>/dev/null
+}
+
+# nfdump_find_file_for_interval BASE_DIR YYYYMMDDhhmm
+# Finds a file named nfcapd.YYYYMMDDhhmm under BASE_DIR (depth 1-4). Prints first path or empty string.
+nfdump_find_file_for_interval() {
+    local base="$1"
+    local ts="$2"
+    find "$base" -mindepth 1 -maxdepth 4 -type f -name "nfcapd.${ts}" 2>/dev/null | head -n1
+}
+
 # nfdump_parse_interval FILEPATH
 # Prints "DATE HOUR MIN" (e.g. "20250615 14 05")
 nfdump_parse_interval() {
