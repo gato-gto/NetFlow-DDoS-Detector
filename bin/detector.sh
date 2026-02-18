@@ -256,7 +256,7 @@ main() {
     local nat_sent=0 nat_supp=0
     local nat_found=0
     if [[ "${ENABLE_DETECT_NAT_BURST:-0}" == "1" ]] && [[ -f "${SCRIPT_DIR}/lib/detectors/nat_burst.sh" ]]; then
-        log_info "NAT BURST: thr_create=${NAT_BURST_CREATE_THR:-2000} thr_total=${NAT_BURST_TOTAL_THR:-3000}"
+        log_info "NAT BURST (XLAT): port_thr=${NAT_BURST_PORT_THRESHOLD:-400} top_n=${NAT_BURST_TOP_N:-20}"
         local results_nat
         results_nat=$(nat_burst_run "$last_file" "$traffic_scope") || { log_warn "NAT BURST failed"; results_nat=""; }
         while IFS=$'\t' read -r src create del total imb; do
@@ -266,7 +266,11 @@ main() {
             order=$(classify_order "${total:-0}")
             if dedup_check_key "NATBURST__${src}" "$ttl_nat"; then
                 dedup_record_key "NATBURST__${src}"
-                nat_items+="${order}\t${total}\t${level} NATBURST <b>${src}</b> create=${create} delete=${del} total=${total} ratio=${imb}"$'\n'
+                if [[ "${create:-0}" == "0" && "${del:-0}" == "0" ]]; then
+                    nat_items+="${order}\t${total}\t${level} NATBURST <b>${src}</b> (XLAT) total=${total} ports=${imb}"$'\n'
+                else
+                    nat_items+="${order}\t${total}\t${level} NATBURST <b>${src}</b> create=${create} delete=${del} total=${total} ratio=${imb}"$'\n'
+                fi
                 (( nat_sent++ )) || true
             else
                 (( nat_supp++ )) || true

@@ -148,3 +148,29 @@ nfdump_detect_adb_scan() {
 nfdump_detect_udp_staging() {
     run_staging_analysis "$1" "$2"
 }
+
+# nfdump_detect_nat_burst_xlat FILEPATH NETS
+# NAT BURST по canonical TSV: агрегация по XLAT_IP (col 11), unique XLAT_PORT (col 12), total flows.
+# Выход TSV: XLAT_IP  create  delete  total_flows  uniq_ports (create/delete=0 в JSON-режиме; detector показывает ratio=uniq_ports).
+# Порог: uniq_ports > NAT_BURST_PORT_THRESHOLD. Топ: NAT_BURST_TOP_N.
+nfdump_detect_nat_burst_xlat() {
+    local file="$1" nets="$2"
+    local th_port="${NAT_BURST_PORT_THRESHOLD:-400}"
+    local top_n="${NAT_BURST_TOP_N:-20}"
+    local full_filter="${nets}"
+    json_stream "$file" "$full_filter" | awk -F'\t' -v th="$th_port" -v top_n="$top_n" '
+        $11 != "" && $11 != "0.0.0.0" {
+            xlat = $11; port = $12
+            k = xlat "\t" port; if (!(k in seen)) { seen[k] = 1; uniq[xlat]++ }
+            flows[xlat]++
+        }
+        END {
+            n = 0
+            for (x in uniq)
+                if (uniq[x] + 0 > th + 0 && n < top_n + 0) {
+                    print x, 0, 0, flows[x], uniq[x]
+                    n++
+                }
+        }
+    ' | sort -t$'\t' -k4,4nr -k5,5nr
+}
