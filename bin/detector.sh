@@ -68,10 +68,12 @@ main() {
     log_info "=== NetFlow DDoS Detector (NFDD) started (dry_run=${DRY_RUN}) ==="
     check_deps
 
-    # Debug: config
+    local traffic_scope
+    traffic_scope=$(build_traffic_scope)
+    [[ -n "${THREAT_SRC_NETS:-}" ]] && log_debug "Config: BIDIRECTIONAL mode (outbound + inbound from threat IPs)"
     log_debug "Config: NFSEN_BASE=$NFSEN_BASE"
     log_debug "Config: NFDUMP_FILTER=$NFDUMP_FILTER"
-    log_debug "Config: INTERNAL_NETS=$INTERNAL_NETS"
+    log_debug "Config: TRAFFIC_SCOPE=$traffic_scope"
     log_debug "Config: NFDUMP_TOP_N=$NFDUMP_TOP_N NFDUMP_TOP_SORT=${NFDUMP_TOP_SORT:-record/flows} THRESHOLD_SUSPICIOUS=$THRESHOLD_SUSPICIOUS"
 
     # 1. Find capture file
@@ -104,13 +106,11 @@ main() {
     fi
 
     if [[ "${DEBUG:-0}" == "1" ]]; then
-        local candidates_file_list
-        candidates_file_list=$(find "$NFSEN_BASE" -mindepth 1 -maxdepth 4 -type f -name 'nfcapd.20*' 2>/dev/null | sort)
-        log_debug "Candidate nfcapd files count: $(echo "$candidates_file_list" | grep -c . || echo 0)"
-        log_debug "Candidate files (newest last):"
-        while IFS= read -r line; do
-            [[ -n "$line" ]] && log_debug "  $line"
-        done <<< "$candidates_file_list"
+        local list count
+        list=$(find "$NFSEN_BASE" -mindepth 1 -maxdepth 4 -type f -name 'nfcapd.20*' 2>/dev/null | sort -u)
+        count=$([[ -n "$list" ]] && wc -l <<< "$list" || echo 0)
+        log_debug "Candidate nfcapd files: $count"
+        while IFS= read -r line; do [[ -n "$line" ]] && log_debug "  $line"; done <<< "$list"
     fi
 
     if [[ -z "$last_file" ]]; then
@@ -131,37 +131,22 @@ main() {
 
     # 3. Run nfdump analysis
     log_info "Running nfdump analysis..."
-    local nfdump_stderr_file results
-    nfdump_stderr_file=""
-    if [[ "${DEBUG:-0}" == "1" ]]; then
-        nfdump_stderr_file=$(mktemp)
-        export NFDUMP_DEBUG_STDERR="$nfdump_stderr_file"
-    fi
-    results=$(nfdump_run_analysis \
-        "$last_file" \
-        "$NFDUMP_FILTER" \
-        "$INTERNAL_NETS" \
-        "$NFDUMP_TOP_N" \
-        "$THRESHOLD_SUSPICIOUS" \
-        "${NFDUMP_TOP_SORT:-record/flows}") || {
-        log_error "nfdump exited with error"
-        [[ -n "$nfdump_stderr_file" && -f "$nfdump_stderr_file" ]] && log_debug "nfdump stderr: $(cat "$nfdump_stderr_file")"
-        [[ -n "$nfdump_stderr_file" && -f "$nfdump_stderr_file" ]] && rm -f "$nfdump_stderr_file"
-        exit 1
+    local stderr_tmp results
+    [[ "${DEBUG:-0}" == "1" ]] && { stderr_tmp=$(mktemp); export NFDUMP_DEBUG_STDERR="$stderr_tmp"; }
+    results=$(nfdump_run_analysis "$last_file" "$NFDUMP_FILTER" "$traffic_scope" \
+        "$NFDUMP_TOP_N" "$THRESHOLD_SUSPICIOUS" "${NFDUMP_TOP_SORT:-record/flows}") || {
+        [[ -n "${stderr_tmp:-}" && -f "${stderr_tmp:-}" ]] && log_debug "nfdump stderr: $(cat "$stderr_tmp")"
+        rm -f "${stderr_tmp:-}"
+        log_error "nfdump exited with error"; exit 1
     }
-    if [[ -n "$nfdump_stderr_file" && -f "$nfdump_stderr_file" ]]; then
-        if [[ -s "$nfdump_stderr_file" ]]; then
-            log_debug "nfdump stderr (summary):"
-            while IFS= read -r line; do log_debug "  $line"; done < "$nfdump_stderr_file"
-        else
-            log_debug "nfdump stderr (summary): (empty)"
-        fi
-        rm -f "$nfdump_stderr_file"
+    if [[ -n "${stderr_tmp:-}" && -f "$stderr_tmp" ]]; then
+        [[ -s "$stderr_tmp" ]] && while IFS= read -r line; do log_debug "nfdump stderr: $line"; done < "$stderr_tmp"
+        rm -f "$stderr_tmp"
     fi
     unset -v NFDUMP_DEBUG_STDERR 2>/dev/null || true
 
-    local result_lines
-    result_lines=$(echo "$results" | grep -c . 2>/dev/null) || result_lines=0
+    local result_lines=0
+    [[ -n "$results" ]] && result_lines=$(wc -l <<< "$results")
     log_debug "nfdump result lines (flows above threshold): $result_lines"
 
     if [[ -z "$results" ]]; then
@@ -190,11 +175,10 @@ main() {
             continue
         fi
 
-        # AS lookup
         local as_info asn asname
         as_info=$(as_lookup "$dst")
-        asn=$(echo "$as_info"   | awk '{print $1}')
-        asname=$(echo "$as_info" | cut -d' ' -f2-)
+        asn="${as_info%% *}"
+        asname="${as_info#* }"
 
         # Record dedup timestamp
         dedup_record "$src" "$dst"

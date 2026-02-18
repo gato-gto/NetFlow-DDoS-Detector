@@ -14,7 +14,7 @@ send_telegram() {
     # Build JSON safely with jq — avoids injection through special characters
     # message_thread_id — optional, for topics in supergroups
     local payload
-    payload=$(jq -n \
+    payload=$(jq -cn \
         --arg chat_id "${TELEGRAM_CHAT_ID}" \
         --arg text    "${text}" \
         --arg thread_id "${TELEGRAM_CHAT_THREAD_ID:-}" \

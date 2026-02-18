@@ -13,9 +13,8 @@ log_init() {
 }
 
 _log() {
-    local level="$1"; shift
-    local ts
-    ts="$(date '+%Y-%m-%d %H:%M:%S')"
+    local level="$1" ts; shift
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
     local msg="[${ts}] [${level}] $*"
     echo "$msg"
     [[ -n "${LOG_FILE:-}" ]] && echo "$msg" >> "$LOG_FILE"

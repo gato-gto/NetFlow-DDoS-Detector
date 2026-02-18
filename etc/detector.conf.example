@@ -27,8 +27,15 @@ THRESHOLD_FLOOD=100000
 THRESHOLD_HEAVY=150000
 THRESHOLD_CRITICAL=300000
 
-# --- INTERNAL NETWORKS (исходящий трафик) ---
+# --- TRAFFIC SCOPE ---
+# Только исходящий (по умолчанию): INTERNAL_NETS — наши сети как источник (LAN→WAN).
 INTERNAL_NETS="(src net 10.0.0.0/8)"
+
+# В обе стороны: задайте THREAT_SRC_NETS — тогда INTERNAL_NETS игнорируется.
+#   • Исходящий: наши хосты (INTERNAL_CIDR) → любой dst
+#   • Входящий:  источники из THREAT_SRC_NETS → наши сети (INTERNAL_CIDR)
+# INTERNAL_CIDR="10.0.0.0/8"
+# THREAT_SRC_NETS="src net 151.242.2.0/24 or src net 78.108.178.0/24 or src net 185.55.173.0/24 or src net 194.46.59.0/24 or src net 43.153.0.0/18 or src net 43.153.64.0/18 or src host 43.173.127.241 or src net 104.171.170.0/24 or src net 107.173.196.0/24 or src net 64.188.68.0/24"
 
 # --- AS Cache TTL (seconds). 86400 = 24 hours ---
 AS_CACHE_TTL=86400

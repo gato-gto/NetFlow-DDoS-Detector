@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
 # lib/nfdump_analysis.sh — nfdump file discovery and flow parsing
 
+# build_traffic_scope
+# Builds TRAFFIC_SCOPE for nfdump filter. Uses THREAT_SRC_NETS, INTERNAL_CIDR, INTERNAL_NETS from env.
+# Prints the scope string to stdout.
+build_traffic_scope() {
+    if [[ -n "${THREAT_SRC_NETS:-}" ]]; then
+        local cidr="${INTERNAL_CIDR:-10.0.0.0/8}"
+        echo "(src net ${cidr}) or (dst net ${cidr} and (${THREAT_SRC_NETS}))"
+    else
+        echo "${INTERNAL_NETS}"
+    fi
+}
+
 # nfdump_find_last_file BASE_DIR
 # Prints path to the newest nfcapd.20* file, or empty string.
 # Supports: flat layout (base/nfcapd.20*) and NfSen layout (base/.../YYYY/MM/DD/nfcapd.20*).
 nfdump_find_last_file() {
-    local base="$1"
-    find "$base" -mindepth 1 -maxdepth 4 -type f -name 'nfcapd.20*' \
-        | sort | tail -n1
+    find "${1:?}" -mindepth 1 -maxdepth 4 -type f -name 'nfcapd.20*' 2>/dev/null \
+        | sort -u | tail -n1
 }
 
 # nfdump_expected_previous_minute
@@ -20,22 +31,14 @@ nfdump_expected_previous_minute() {
 # nfdump_find_file_for_interval BASE_DIR YYYYMMDDhhmm
 # Finds a file named nfcapd.YYYYMMDDhhmm under BASE_DIR (depth 1-4). Prints first path or empty string.
 nfdump_find_file_for_interval() {
-    local base="$1"
-    local ts="$2"
-    find "$base" -mindepth 1 -maxdepth 4 -type f -name "nfcapd.${ts}" 2>/dev/null | head -n1
+    find "${1:?}" -mindepth 1 -maxdepth 4 -type f -name "nfcapd.${2:?}" 2>/dev/null | head -n1
 }
 
 # nfdump_parse_interval FILEPATH
 # Prints "DATE HOUR MIN" (e.g. "20250615 14 05")
 nfdump_parse_interval() {
-    local fpath="$1"
-    local fname
-    fname=$(basename "$fpath")
-    local date_part="${fname:7:8}"
-    local time_part="${fname:15:4}"
-    local hour="${time_part:0:2}"
-    local min="${time_part:2:2}"
-    echo "${date_part} ${hour} ${min}"
+    local fname="${1##*/}"
+    echo "${fname:7:8} ${fname:15:2} ${fname:17:2}"
 }
 
 # nfdump_run_analysis FILEPATH FILTER NETS TOP_N THRESHOLD [TOP_SORT]
@@ -43,21 +46,12 @@ nfdump_parse_interval() {
 # TOP_SORT: record/flows (default), record/packets, record/bytes — order of top-N.
 # When NFDUMP_DEBUG_STDERR is set (DEBUG=1), nfdump stderr is written there for logging.
 nfdump_run_analysis() {
-    local file="$1"
-    local filter="$2"
-    local nets="$3"
-    local top_n="$4"
-    local threshold="$5"
+    local file="$1" filter="$2" nets="$3" top_n="$4" threshold="$5"
     local top_sort="${6:-record/flows}"
-    case "$top_sort" in
-        record/flows|record/packets|record/bytes) ;;
-        *) top_sort="record/flows" ;;
-    esac
-    local stderr_dest="/dev/null"
-    [[ -n "${NFDUMP_DEBUG_STDERR:-}" ]] && stderr_dest="$NFDUMP_DEBUG_STDERR"
+    [[ "$top_sort" == record/flows || "$top_sort" == record/packets || "$top_sort" == record/bytes ]] || top_sort="record/flows"
+    local stderr_dest="${NFDUMP_DEBUG_STDERR:-/dev/null}"
 
-    nfdump -r "$file" "${filter} and (${nets})" \
-           -A srcip,dstip -s "$top_sort" -n "$top_n" \
+    nfdump -r "$file" "${filter} and (${nets})" -A srcip,dstip -s "$top_sort" -n "$top_n" \
         2>"$stderr_dest" \
     | awk -v thr="$threshold" '
         /^[0-9]{4}-[0-9]{2}-[0-9]{2}/ {
